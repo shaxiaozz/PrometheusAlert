@@ -60,7 +60,7 @@ func PostToDingDing(title, text, Ddurl, AtSomeOne, logsign string) string {
 	}
 
 	u := DDMessage{
-		Msgtype: "markdown",
+		Msgtype: "text",
 		Markdown: struct {
 			Title string `json:"title"`
 			Text  string `json:"text"`
