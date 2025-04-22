@@ -98,7 +98,7 @@ func PostToDingDing(title, text, Ddurl, AtSomeOne, logsign string) string {
 		aiopsApiSign := beego.AppConfig.String("aiops_api_sign")
 		actionURL := aiopsApiUrl + `?sign=` + aiopsApiSign + `&id=` + shortUUID
 		encodedURL := url.QueryEscape(actionURL)
-		actionURL = `dingtalk://dingtalkclient/page/link?url=` + encodedURL + `&pc_slide=false`
+		encodedURL = `dingtalk://dingtalkclient/page/link?url=` + encodedURL + `&pc_slide=false`
 
 		// 告警内容追加告警ID
 		SendText = SendText + `##### <font color="#e3133f">告警ID</font>：` + shortUUID
@@ -126,7 +126,7 @@ func PostToDingDing(title, text, Ddurl, AtSomeOne, logsign string) string {
 					Title     string `json:"title"`
 					ActionURL string `json:"actionURL"`
 				}{
-					{Title: "AI分析", ActionURL: actionURL},
+					{Title: "AI分析", ActionURL: encodedURL},
 				},
 			},
 		}
