@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"net/url"
@@ -29,6 +30,19 @@ type DDMessage struct {
 		AtMobiles []string `json:"atMobiles"`
 		IsAtAll   bool     `json:"isAtAll"`
 	} `json:"at"`
+}
+
+type DDActionCardMessage struct {
+	Msgtype    string `json:"msgtype"`
+	ActionCard struct {
+		Title          string `json:"title"`
+		Text           string `json:"text"`
+		BtnOrientation string `json:"btnOrientation"`
+		Btns           []struct {
+			Title     string `json:"title"`
+			ActionURL string `json:"actionURL"`
+		} `json:"btns"`
+	} `json:"actionCard"`
 }
 
 func PostToDingDing(title, text, Ddurl, AtSomeOne, logsign string) string {
@@ -59,17 +73,65 @@ func PostToDingDing(title, text, Ddurl, AtSomeOne, logsign string) string {
 		Atall = false
 	}
 
-	u := DDMessage{
-		Msgtype: "text",
-		Markdown: struct {
-			Title string `json:"title"`
-			Text  string `json:"text"`
-		}{Title: title, Text: SendText},
-		At: struct {
-			AtMobiles []string `json:"atMobiles"`
-			IsAtAll   bool     `json:"isAtAll"`
-		}{AtMobiles: atMobile, IsAtAll: Atall},
+	// 如果SendText包含恢复信息,则无需添加按钮
+	var u interface{}
+	if strings.Contains(SendText, "恢复信息") {
+		u = DDMessage{
+			Msgtype: "markdown",
+			Markdown: struct {
+				Title string `json:"title"`
+				Text  string `json:"text"`
+			}{Title: title, Text: SendText},
+			At: struct {
+				AtMobiles []string `json:"atMobiles"`
+				IsAtAll   bool     `json:"isAtAll"`
+			}{AtMobiles: atMobile, IsAtAll: Atall},
+		}
+	} else {
+		// 生成uuid
+		uuid := uuid.New().String()
+		parts := strings.Split(uuid, "-")
+		shortUUID := strings.Join(parts[:3], "-")
+
+		// 封装后端接口
+		aiopsApiUrl := beego.AppConfig.String("aiops_api_url")
+		aiopsApiSign := beego.AppConfig.String("aiops_api_sign")
+		actionURL := aiopsApiUrl + `?sign=` + aiopsApiSign + `&id=` + shortUUID
+		encodedURL := url.QueryEscape(actionURL)
+		actionURL = `dingtalk://dingtalkclient/page/link?url=` + encodedURL + `&pc_slide=false`
+
+		// 告警内容追加告警ID
+		SendText = SendText + `##### <font color="#e3133f">告警ID</font>：` + shortUUID
+
+		// 写入告警ID和相关的告警内容至数据库
+		if err := postAlertAnalysis(actionURL, SendText); err != nil {
+			logs.Error(logsign, "[dingding]", err.Error())
+		}
+
+		u = DDActionCardMessage{
+			Msgtype: "actionCard",
+			ActionCard: struct {
+				Title          string `json:"title"`
+				Text           string `json:"text"`
+				BtnOrientation string `json:"btnOrientation"`
+				Btns           []struct {
+					Title     string `json:"title"`
+					ActionURL string `json:"actionURL"`
+				} `json:"btns"`
+			}{
+				Title:          title,
+				Text:           SendText,
+				BtnOrientation: "0",
+				Btns: []struct {
+					Title     string `json:"title"`
+					ActionURL string `json:"actionURL"`
+				}{
+					{Title: "AI分析", ActionURL: actionURL},
+				},
+			},
+		}
 	}
+
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(u)
 	logs.Info(logsign, "[dingding]", b)
@@ -139,4 +201,30 @@ func dingdingSign(ddurl string) string {
 	signURL := u.String()
 
 	return signURL
+}
+
+// 写入uuid和相关的告警内容至数据库
+func postAlertAnalysis(url, alertContent string) error {
+	// 封装请求体
+	postParams := new(struct {
+		AlertContent string `json:"alert_content"` // 告警内容
+	})
+	postParams.AlertContent = alertContent
+	jsonData, _ := json.Marshal(postParams)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// 判断是否增加成功
+	if resp.StatusCode != 200 {
+		return err
+	}
+	return nil
 }
