@@ -510,7 +510,11 @@ func SendMessagePrometheusAlert(message string, pmsg *PrometheusAlertMsg, logsig
 		ReturnMsg += PostTXphonecall(message, pmsg.Phone, logsign)
 	//阿里云电话
 	case "alydh":
-		ReturnMsg += PostALYphonecall(message, pmsg.Phone, logsign)
+		if findResolved := strings.Contains(message, "resolved"); findResolved {
+			logs.Info(logsign, "阿里云电话告警恢复消息已被管理员禁用")
+		} else {
+			ReturnMsg += PostALYphonecall(message, pmsg.Phone, logsign)
+		}
 	//容联云电话
 	case "rlydh":
 		ReturnMsg += PostRLYphonecall(message, pmsg.Phone, logsign)
